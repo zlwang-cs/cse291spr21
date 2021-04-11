@@ -10,6 +10,8 @@ import torch.onnx
 import data
 import model
 
+from plot_utils import PlotHelper
+
 parser = argparse.ArgumentParser(description='PyTorch Wikitext-2 RNN/LSTM/GRU/Transformer Language Model')
 parser.add_argument('--data', type=str, default='./data/wikitext-2',
                     help='location of the data corpus')
@@ -54,6 +56,10 @@ parser.add_argument('--dry-run', action='store_true',
                     help='verify the code and the model')
 
 args = parser.parse_args()
+
+# The plot helpers
+train_loss_per_x_batch = PlotHelper('the training loss per 200 batches')
+train_valid_loss_per_epoch = PlotHelper('the training and the validation losses per epoch')
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
@@ -158,6 +164,9 @@ def evaluate(data_source):
 
 
 def train():
+    batch_cnt = 0
+    train_loss = 0
+
     # Turn on training mode which enables dropout.
     model.train()
     total_loss = 0.
@@ -186,6 +195,9 @@ def train():
 
         total_loss += loss.item()
 
+        batch_cnt += 1
+        train_loss += loss.item()
+
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
@@ -193,10 +205,16 @@ def train():
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, lr,
                 elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+
+            train_loss_per_x_batch.add_data_point({'epoch_idx': epoch, 'batch_idx': batch, 'training_loss': cur_loss})
+
             total_loss = 0
             start_time = time.time()
         if args.dry_run:
             break
+
+        train_loss /= batch_cnt
+        return train_loss
 
 
 def export_onnx(path, batch_size, seq_len):
@@ -216,13 +234,18 @@ best_val_loss = None
 try:
     for epoch in range(1, args.epochs+1):
         epoch_start_time = time.time()
-        train()
+        train_loss = train()
         val_loss = evaluate(val_data)
         print('-' * 89)
         print('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
                 'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                            val_loss, math.exp(val_loss)))
         print('-' * 89)
+
+        train_valid_loss_per_epoch.add_data_point({'epoch_idx': epoch,
+                                                   'valid_loss': val_loss,
+                                                   'train_loss': train_loss})
+
         # Save the model if the validation loss is the best we've seen so far.
         if not best_val_loss or val_loss < best_val_loss:
             with open(args.save, 'wb') as f:
@@ -254,3 +277,8 @@ print('=' * 89)
 if len(args.onnx_export) > 0:
     # Export the model in ONNX format.
     export_onnx(args.onnx_export, batch_size=1, seq_len=args.bptt)
+
+train_loss_per_x_batch.save_data(path='./outputs/train_loss_per_200_batches.pkl')
+train_valid_loss_per_epoch.save_data(path='./outputs/train_valid_loss_per_epoch.pkl')
+
+
