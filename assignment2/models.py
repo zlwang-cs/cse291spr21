@@ -96,7 +96,7 @@ class BiLSTMCRFTagger(nn.Module):
                 score_matrix[t] = cur_energy[-1:]
                 pointer[t] = -1
             else:
-                score_matrix[t], pointer[t] = torch.max(cur_energy + score_matrix[t-1].unsqueeze(1), dim=1)
+                score_matrix[t], pointer[t] = torch.max(cur_energy + score_matrix[t-1].unsqueeze(1), dim=0)
 
         last_score, last_pointer = torch.max(score_matrix[-1], dim=0)
         pred_label = sentence.new_zeros(size=(length,), dtype=torch.long)
@@ -117,17 +117,17 @@ class BiLSTMCRFTagger(nn.Module):
 
         energy = self.transition.unsqueeze(0) + bilstm_feats.unsqueeze(1)  # length x tagset_size(i-1) x tagset_size(i)
 
+        target_energy = sentence.new_zeros(size=(1,), dtype=torch.float)
         summary = None
-        target_energy = None
 
         for t in range(length):
             cur_energy = energy[t]
 
             if t == 0:
                 summary = cur_energy[-1, :]  # from start to the first token
-                target_energy = cur_energy[-1, tags[t]]
+                target_energy += cur_energy[-1, tags[t]]
             else:
-                summary = torch.logsumexp(summary.unsqueeze(1) + cur_energy, dim=1)
+                summary = torch.logsumexp(summary.unsqueeze(1) + cur_energy, dim=0)
                 target_energy += cur_energy[tags[t-1], tags[t]]
 
         return torch.logsumexp(summary, dim=0) - target_energy

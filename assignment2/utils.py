@@ -37,7 +37,7 @@ def prepare_dataset(dataset, word_vocab, label_vocab):
     return dataset
 
 
-def train(model, optimizer, train_data, epochs, log_interval=25):
+def train(model, optimizer, train_data, epochs, log_interval=25, eval_kwargs=None):
     losses_per_epoch = []
     for epoch in range(epochs):
         print(f'--- EPOCH {epoch} ---')
@@ -55,6 +55,9 @@ def train(model, optimizer, train_data, epochs, log_interval=25):
             losses_per_epoch[-1].append(loss.detach().cpu().item())
             if i > 0 and i % log_interval == 0:
                 print(f'Avg loss over last {log_interval} updates: {np.mean(losses_per_epoch[-1][-log_interval:])}')
+
+        if eval_kwargs is not None:
+            evaluate(**eval_kwargs)
 
 
 def evaluate(model, dataset, word_vocab, label_vocab):

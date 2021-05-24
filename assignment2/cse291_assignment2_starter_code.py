@@ -43,7 +43,10 @@ if __name__ == '__main__':
         raise NotImplementedError
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-    evaluate(model, valid_data, word_vocab, label_vocab)
-    train(model, optimizer, train_data, epochs=30, log_interval=500)
-    evaluate(model, valid_data, word_vocab, label_vocab)
+    # evaluate(model, valid_data, word_vocab, label_vocab)
+    train(model, optimizer, train_data, epochs=30, log_interval=500, eval_kwargs={'model': model,
+                                                                                  'dataset': valid_data,
+                                                                                  'word_vocab': word_vocab,
+                                                                                  'label_vocab': label_vocab})
+    # evaluate(model, valid_data, word_vocab, label_vocab)
 
