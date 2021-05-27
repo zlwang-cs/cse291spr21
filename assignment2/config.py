@@ -11,6 +11,5 @@ PAD = '<pad>'
 START_TAG = "<start>"  # you can add this explicitly or use it implicitly in your CRF layer
 STOP_TAG = "<stop>"    # you can add this explicitly or use it implicitly in your CRF layer
 
-MODEL_TYPE = 'BiLSTM'
+MODEL_TYPE = 'BiLSTM+CRF-2'
 assert MODEL_TYPE in ['BiLSTM', 'BiLSTM+CRF', 'BiLSTM+CRF-2']
-

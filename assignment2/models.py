@@ -77,24 +77,24 @@ class BiLSTMCRFTagger(nn.Module):
         bilstm_out = self.dropout(bilstm_out)
         bilstm_out = bilstm_out
         bilstm_feats = self.tag_projection_layer(bilstm_out)
-        return bilstm_feats
+        return bilstm_feats, bilstm_out
 
-    def get_energy(self, feats):
+    def get_energy(self, proj_feats, raw_feats):
         if not self.bigram:
-            energy = self.transition.unsqueeze(0) + feats.unsqueeze(1)
+            energy = self.transition.unsqueeze(0) + proj_feats.unsqueeze(1)
             # length x tagset_size(i-1) x tagset_size(i)
         else:
-            energy = self.transition(feats).view(1, self.tagset_size, self.tagset_size) + feats.unsqueeze(1)
+            energy = self.transition(raw_feats).view(-1, self.tagset_size, self.tagset_size) + proj_feats.unsqueeze(1)
             # length x tagset_size(i-1) x tagset_size(i)
         return energy
 
     def forward(self, sentence):
         # length x feature dim
-        bilstm_feats = self.compute_lstm_emission_features(sentence)
+        bilstm_feats, bilstm_out = self.compute_lstm_emission_features(sentence)
         bilstm_feats = bilstm_feats.squeeze(0)
         length, _ = bilstm_feats.size()
 
-        energy = self.get_energy(bilstm_feats)
+        energy = self.get_energy(bilstm_feats, bilstm_out)
 
         energy = energy[:, :-1, :-1]
         label_num = self.tagset_size - 1
@@ -124,11 +124,11 @@ class BiLSTMCRFTagger(nn.Module):
     def loss(self, sentence, tags):
         tags = tags.squeeze(0)
 
-        bilstm_feats = self.compute_lstm_emission_features(sentence)
+        bilstm_feats, bilstm_out = self.compute_lstm_emission_features(sentence)
         bilstm_feats = bilstm_feats.squeeze(0)
         length, _ = bilstm_feats.size()
 
-        energy = self.get_energy(bilstm_feats)
+        energy = self.get_energy(bilstm_feats, bilstm_out)
 
         # energy = self.transition.unsqueeze(0) + bilstm_feats.unsqueeze(1)  # length x tagset_size(i-1) x tagset_size(i)
 
