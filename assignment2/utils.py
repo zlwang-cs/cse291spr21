@@ -56,6 +56,7 @@ def train(model, optimizer, train_data, epochs, log_interval=25, eval_kwargs=Non
             if i > 0 and i % log_interval == 0:
                 print(f'Avg loss over last {log_interval} updates: {np.mean(losses_per_epoch[-1][-log_interval:])}')
 
+        print('Avg evaluation loss:', np.mean(losses_per_epoch[-1]))
         if eval_kwargs is not None:
             evaluate(**eval_kwargs)
 
@@ -81,10 +82,10 @@ def evaluate(model, dataset, word_vocab, label_vocab):
 
     print('Avg evaluation loss:', np.mean(losses))
     print(conlleval.evaluate([tag for tags in true_tags for tag in tags], [tag for tags in pred_tags for tag in tags], verbose=True))
-    print('\n5 random evaluation samples:')
-    for idx in np.random.randint(0, len(sents), size=5):
-        print('SENT:', ' '.join(sents[idx]))
-        print('TRUE:', ' '.join(true_tags[idx]))
-        print('PRED:', ' '.join(pred_tags[idx]))
-        print('-'*20)
+    # print('\n5 random evaluation samples:')
+    # for idx in np.random.randint(0, len(sents), size=5):
+    #     print('SENT:', ' '.join(sents[idx]))
+    #     print('TRUE:', ' '.join(true_tags[idx]))
+    #     print('PRED:', ' '.join(pred_tags[idx]))
+    #     print('-'*20)
     return sents, true_tags, pred_tags

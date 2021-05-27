@@ -39,12 +39,14 @@ if __name__ == '__main__':
         model = BiLSTMTagger(len(word_vocab), len(label_vocab), 128, 256).to(device)
     elif MODEL_TYPE == 'BiLSTM+CRF':
         model = BiLSTMCRFTagger(len(word_vocab), len(label_vocab), 128, 256).to(device)
+    elif MODEL_TYPE == 'BiLSTM+CRF-2':
+        model = BiLSTMCRFTagger(len(word_vocab), len(label_vocab), 128, 256, bigram=True).to(device)
     else:
         raise NotImplementedError
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     # evaluate(model, valid_data, word_vocab, label_vocab)
-    train(model, optimizer, train_data, epochs=30, log_interval=500, eval_kwargs={'model': model,
+    train(model, optimizer, train_data, epochs=100, log_interval=500, eval_kwargs={'model': model,
                                                                                   'dataset': valid_data,
                                                                                   'word_vocab': word_vocab,
                                                                                   'label_vocab': label_vocab})

@@ -46,7 +46,7 @@ class BiLSTMTagger(nn.Module):
 
 
 class BiLSTMCRFTagger(nn.Module):
-    def __init__(self, vocab_size, tag_vocab_size, embedding_dim, hidden_dim, dropout=0.3):
+    def __init__(self, vocab_size, tag_vocab_size, embedding_dim, hidden_dim, dropout=0.3, bigram=False):
         super(BiLSTMCRFTagger, self).__init__()
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
@@ -58,8 +58,11 @@ class BiLSTMCRFTagger(nn.Module):
 
         self.tag_projection_layer = nn.Linear(hidden_dim, self.tagset_size).to(device)
 
-        self.transition = nn.Parameter(torch.zeros(size=(self.tagset_size, self.tagset_size))).to(device)
-        nn.init.normal_(self.transition)
+        self.bigram = bigram
+        if bigram:
+            self.transition = nn.Linear(hidden_dim, self.tagset_size * self.tagset_size)
+        else:
+            self.transition = nn.Parameter(torch.zeros(size=(self.tagset_size, self.tagset_size))).to(device)
 
         self.dropout = nn.Dropout(p=dropout)
 
@@ -76,13 +79,23 @@ class BiLSTMCRFTagger(nn.Module):
         bilstm_feats = self.tag_projection_layer(bilstm_out)
         return bilstm_feats
 
+    def get_energy(self, feats):
+        if not self.bigram:
+            energy = self.transition.unsqueeze(0) + feats.unsqueeze(1)
+            # length x tagset_size(i-1) x tagset_size(i)
+        else:
+            energy = self.transition(feats).view(1, self.tagset_size, self.tagset_size) + feats.unsqueeze(1)
+            # length x tagset_size(i-1) x tagset_size(i)
+        return energy
+
     def forward(self, sentence):
         # length x feature dim
         bilstm_feats = self.compute_lstm_emission_features(sentence)
         bilstm_feats = bilstm_feats.squeeze(0)
         length, _ = bilstm_feats.size()
 
-        energy = self.transition.unsqueeze(0) + bilstm_feats.unsqueeze(1)  # length x tagset_size(i-1) x tagset_size(i)
+        energy = self.get_energy(bilstm_feats)
+
         energy = energy[:, :-1, :-1]
         label_num = self.tagset_size - 1
 
@@ -115,7 +128,9 @@ class BiLSTMCRFTagger(nn.Module):
         bilstm_feats = bilstm_feats.squeeze(0)
         length, _ = bilstm_feats.size()
 
-        energy = self.transition.unsqueeze(0) + bilstm_feats.unsqueeze(1)  # length x tagset_size(i-1) x tagset_size(i)
+        energy = self.get_energy(bilstm_feats)
+
+        # energy = self.transition.unsqueeze(0) + bilstm_feats.unsqueeze(1)  # length x tagset_size(i-1) x tagset_size(i)
 
         target_energy = sentence.new_zeros(size=(1,), dtype=torch.float)
         summary = None
