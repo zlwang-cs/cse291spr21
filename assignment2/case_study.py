@@ -13,6 +13,7 @@ from config import *
 from utils import read_conll_sentence, prepare_dataset, train, evaluate
 from models import BiLSTMTagger, BiLSTMCRFTagger
 
+
 if __name__ == '__main__':
     # load a list of sentences, where each word in the list is a tuple containing the word and the label
     train_data = list(read_conll_sentence(TRAIN_DATA))
@@ -34,20 +35,35 @@ if __name__ == '__main__':
     print(' '.join([word_vocab.itos[i.item()] for i in valid_data[1][0]]))
     print(' '.join([label_vocab.itos[i.item()] for i in valid_data[1][1]]))
 
-    # Train BiLSTM Tagger Baseline
-    if MODEL_TYPE == 'BiLSTM':
-        model = BiLSTMTagger(len(word_vocab), len(label_vocab), 128, 256).to(device)
-    elif MODEL_TYPE == 'BiLSTM+CRF':
-        model = BiLSTMCRFTagger(len(word_vocab), len(label_vocab), 128, 256).to(device)
-    elif MODEL_TYPE == 'BiLSTM+CRF-2':
-        model = BiLSTMCRFTagger(len(word_vocab), len(label_vocab), 128, 256, bigram=True).to(device)
-    else:
-        raise NotImplementedError
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    rnn_tagger = BiLSTMTagger(len(word_vocab), len(label_vocab), 128, 256)\
+        .to(device)
+    rnn_tagger.load_state_dict(torch.load('./BiLSTM.pt'))
+    crf_tagger = BiLSTMCRFTagger(len(word_vocab), len(label_vocab), 128, 256)\
+        .to(device)
+    crf_tagger.load_state_dict(torch.load('./BiLSTM+CRF.pt'))
 
-    train(model, optimizer, train_data, epochs=100, log_interval=500, eval_kwargs={'model': model,
-                                                                                   'dataset': valid_data,
-                                                                                   'word_vocab': word_vocab,
-                                                                                   'label_vocab': label_vocab},
-          model_path=MODEL_PATH)
-    # evaluate(model, valid_data, word_vocab, label_vocab)
+    results = {}
+
+    print('BiLSTM'.center(20, '='))
+    sents, true_tags, pred_tags, _ = evaluate(rnn_tagger, valid_data, word_vocab, label_vocab)
+    results['BiLSTM'] = {
+        'sentence': sents,
+        'true': true_tags,
+        'pred': pred_tags,
+    }
+    print('BiLSTM+CRF'.center(20, '='))
+    sents, true_tags, pred_tags, _ = evaluate(crf_tagger, valid_data, word_vocab, label_vocab)
+    results['BiLSTM+CRF'] = {
+        'sentence': sents,
+        'true': true_tags,
+        'pred': pred_tags,
+    }
+    for sent, rnn_pred, crf_pred, true in zip(results['BiLSTM']['sentence'], results['BiLSTM']['pred'], results['BiLSTM+CRF']['pred'], results['BiLSTM']['true']):
+        if rnn_pred != true and crf_pred == true:
+            print(sent)
+            print('RNN:', rnn_pred)
+            print('CRF:', crf_pred)
+            print('='*20)
+
+
+

@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 import conlleval
 from config import *
@@ -37,7 +38,10 @@ def prepare_dataset(dataset, word_vocab, label_vocab):
     return dataset
 
 
-def train(model, optimizer, train_data, epochs, log_interval=25, eval_kwargs=None):
+def train(model, optimizer, train_data, epochs, log_interval=25, eval_kwargs=None, model_path=None):
+
+    best_f1 = -1
+
     losses_per_epoch = []
     for epoch in range(epochs):
         print(f'--- EPOCH {epoch} ---')
@@ -58,7 +62,10 @@ def train(model, optimizer, train_data, epochs, log_interval=25, eval_kwargs=Non
 
         print('Avg evaluation loss:', np.mean(losses_per_epoch[-1]))
         if eval_kwargs is not None:
-            evaluate(**eval_kwargs)
+            _, _, _, f1 = evaluate(**eval_kwargs)
+            if f1 > best_f1:
+                best_f1 = f1
+                torch.save(model.state_dict(), model_path)
 
 
 def evaluate(model, dataset, word_vocab, label_vocab):
@@ -81,11 +88,11 @@ def evaluate(model, dataset, word_vocab, label_vocab):
             sents.append([word_vocab.itos[i] for i in sent[0]])
 
     print('Avg evaluation loss:', np.mean(losses))
-    print(conlleval.evaluate([tag for tags in true_tags for tag in tags], [tag for tags in pred_tags for tag in tags], verbose=True))
+    acc, rec, f1 = conlleval.evaluate([tag for tags in true_tags for tag in tags], [tag for tags in pred_tags for tag in tags], verbose=True)
     # print('\n5 random evaluation samples:')
     # for idx in np.random.randint(0, len(sents), size=5):
     #     print('SENT:', ' '.join(sents[idx]))
     #     print('TRUE:', ' '.join(true_tags[idx]))
     #     print('PRED:', ' '.join(pred_tags[idx]))
     #     print('-'*20)
-    return sents, true_tags, pred_tags
+    return sents, true_tags, pred_tags, f1

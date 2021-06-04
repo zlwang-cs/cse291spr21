@@ -60,7 +60,7 @@ class BiLSTMCRFTagger(nn.Module):
 
         self.bigram = bigram
         if bigram:
-            self.transition = nn.Linear(hidden_dim, self.tagset_size * self.tagset_size)
+            self.transition = nn.Linear(hidden_dim, self.tagset_size * self.tagset_size).to(device)
         else:
             self.transition = nn.Parameter(torch.zeros(size=(self.tagset_size, self.tagset_size))).to(device)
 
@@ -96,7 +96,6 @@ class BiLSTMCRFTagger(nn.Module):
 
         energy = self.get_energy(bilstm_feats, bilstm_out)
 
-        energy = energy[:, :-1, :-1]
         label_num = self.tagset_size - 1
 
         score_matrix = sentence.new_zeros(size=(length, label_num), dtype=torch.float)
@@ -106,10 +105,10 @@ class BiLSTMCRFTagger(nn.Module):
             cur_energy = energy[t]
 
             if t == 0:
-                score_matrix[t] = cur_energy[-1:]
+                score_matrix[t] = cur_energy[-1, :-1]
                 pointer[t] = -1
             else:
-                score_matrix[t], pointer[t] = torch.max(cur_energy + score_matrix[t-1].unsqueeze(1), dim=0)
+                score_matrix[t], pointer[t] = torch.max(cur_energy[:-1, :-1] + score_matrix[t-1].unsqueeze(1), dim=0)
 
         last_score, last_pointer = torch.max(score_matrix[-1], dim=0)
         pred_label = sentence.new_zeros(size=(length,), dtype=torch.long)
