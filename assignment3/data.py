@@ -1,9 +1,10 @@
-import torch
+import os
 from collections import defaultdict, Counter, namedtuple
 from collections.abc import Iterable
-import os
 
 import nltk
+import torch
+
 
 def kmeans(x, k, max_it=32):
     r"""
@@ -79,7 +80,7 @@ def kmeans(x, k, max_it=32):
 
 
 class Tokenizer:
-  
+
     def __init__(self, lang='en'):
         import stanza
         try:
@@ -148,7 +149,6 @@ class Sampler(torch.utils.data.Sampler):
 
     def __len__(self):
         return self.samples
-
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -246,7 +246,6 @@ class DataLoader(torch.utils.data.DataLoader):
             yield namedtuple('Batch', (f.name for f in batch.keys()))(*[f.compose(d) for f, d in batch.items()])
 
 
-
 class Vocab(object):
     r"""
     Defines a vocabulary object that will be used to numericalize a field.
@@ -312,7 +311,6 @@ class Vocab(object):
     def extend(self, tokens):
         self.itos.extend(sorted(set(tokens).difference(self.stoi)))
         self.stoi.update({token: i for i, token in enumerate(self.itos)})
-
 
 
 def pad(tensors, padding_value=0, total_length=None, padding_side='right'):
@@ -606,11 +604,12 @@ class ChartField(Field):
         if self.use_vocab:
             charts = [[[self.vocab[i] if i is not None else -1 for i in row] for row in chart] for chart in charts]
         if self.bos:
-            charts = [[[self.bos_index]*len(chart[0])] + chart for chart in charts]
+            charts = [[[self.bos_index] * len(chart[0])] + chart for chart in charts]
         if self.eos:
-            charts = [chart + [[self.eos_index]*len(chart[0])] for chart in charts]
+            charts = [chart + [[self.eos_index] * len(chart[0])] for chart in charts]
         charts = [torch.tensor(chart) for chart in charts]
         return charts
+
 
 class Transform(object):
     r"""
@@ -683,7 +682,6 @@ class Transform(object):
     def save(self, path, sentences):
         with open(path, 'w') as f:
             f.write('\n'.join([str(i) for i in sentences]) + '\n')
-
 
 
 class Tree(Transform):
@@ -859,7 +857,7 @@ class Tree(Transform):
             if equal_labels is not None:
                 label = equal_labels.get(label, label)
             if len(tree) == 1 and not isinstance(tree[0], nltk.Tree):
-                return (i+1 if label is not None else i), []
+                return (i + 1 if label is not None else i), []
             j, spans = i, []
             for child in tree:
                 j, s = track(child, j)
@@ -867,6 +865,7 @@ class Tree(Transform):
             if label is not None and j > i:
                 spans = [(i, j, label)] + spans
             return j, spans
+
         return track(tree, 0)[1]
 
     @classmethod
@@ -904,7 +903,7 @@ class Tree(Transform):
 
         def track(node):
             i, j, label = next(node)
-            if j == i+1:
+            if j == i + 1:
                 children = [leaves[i]]
             else:
                 children = track(node) + track(node)
@@ -915,6 +914,7 @@ class Tree(Transform):
             for label in reversed(labels[:-1]):
                 tree = nltk.Tree(label, [tree])
             return [tree]
+
         return nltk.Tree(root, track(iter(sequence)))
 
     def load(self, data, lang=None, max_len=None, **kwargs):
@@ -1018,7 +1018,7 @@ class TreeSentence(Sentence):
         super().__init__(transform)
 
         words, tags = zip(*tree.pos())
-        chart = [[None]*(len(words)+1) for _ in range(len(words)+1)]
+        chart = [[None] * (len(words) + 1) for _ in range(len(words) + 1)]
         for i, j, label in Tree.factorize(Tree.binarize(tree)[0]):
             chart[i][j] = label
         self.values = [words, tags, tree, chart]
@@ -1041,6 +1041,6 @@ if __name__ == "__main__":
     CHART.build(train)
     TAG.build(train)
 
+    import pdb;
 
-    import pdb; pdb.set_trace()
-
+    pdb.set_trace()

@@ -20,11 +20,11 @@ class Node(object):
 
     def slinearize(self):
         return "({} {})".format(
-        self.tag, " ".join(child.slinearize() for child in self.children))
+            self.tag, " ".join(child.slinearize() for child in self.children))
 
     def blinearize(self):
         return "({} {})".format(
-        self.tag, " ".join([self.left.blinearize(), self.right.blinearize()]))
+            self.tag, " ".join([self.left.blinearize(), self.right.blinearize()]))
 
     def linearize(self):
         if len(self.children) != 0:
@@ -38,8 +38,8 @@ class Node(object):
         if len(self.children) > 2:
             # only retain the original father node
             if order == 1:
-                new_node = Node(tag="{}@{}".format(self.tag.split("@")[0] 
-                                                    if "@" in self.tag else self.tag, self.children[0].tag))
+                new_node = Node(tag="{}@{}".format(self.tag.split("@")[0]
+                                                   if "@" in self.tag else self.tag, self.children[0].tag))
             else:
                 new_node = Node(tag="{}@".format(self.tag.strip("@")))
             for i in range(1, len(self.children)):
@@ -60,7 +60,7 @@ class Node(object):
             return ret
         else:
             return [self.order]
-    
+
     def get_all_spans(self):
         if hasattr(self, 'word'):
             if self.word != "":
@@ -68,13 +68,13 @@ class Node(object):
         else:
             if len(self.children) == 0:
                 return []
-        
+
         if len(self.children) > 0:
             if len(self.children) == 1 and self.children[0].word != "":
                 return []
             ret = [self.span]
             for child in self.children:
-                ret += child.get_all_spans() 
+                ret += child.get_all_spans()
             return ret
         else:
             return []
@@ -87,6 +87,7 @@ class Node(object):
 
     def sen_len(self):
         return len(self.get_original_sentence().split(" "))
+
 
 def from_string(s):
     tokens = s.replace("(", " ( ").replace(")", " ) ").split()
@@ -117,6 +118,7 @@ def from_string(s):
                 paren_count -= 1
 
         return trees, index
+
     t, idx = helper(0)
     return t[0]
 
@@ -143,7 +145,7 @@ def draw_tree(r: Node, res_path=None):
         for child in curr_node.children:
             bfs_list.append((curr_node_num, child))
     if res_path is not None:
-        dot.render(res_path, format="png") 
+        dot.render(res_path, format="png")
     return dot
 
 
@@ -153,6 +155,6 @@ if __name__ == "__main__":
             l = l.strip("\n")
             t = from_string(l)
             if t.sen_len() <= 10:
-                print(l )
+                print(l)
                 draw_tree(t, "viz.png")
                 break

@@ -1,17 +1,21 @@
-import torch.nn as nn
-import torch
-import os
-from opt_einsum import contract
-from datetime import datetime, timedelta
-from collections import Counter
-import torch.autograd as autograd
-from torch.optim import Adam
-from data import Dataset, Tree, Field, RawField, ChartField
 import argparse
+import os
+from collections import Counter
+from datetime import datetime, timedelta
+
+import torch
+import torch.autograd as autograd
+import torch.nn as nn
+import torch.nn.functional as F
+from opt_einsum import contract
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+from torch.optim import Adam
+
+from data import Dataset, Tree, Field, RawField, ChartField
+
 
 class Metric(object):
-  
+
     def __lt__(self, other):
         return self.score < other
 
@@ -30,7 +34,7 @@ class Metric(object):
 
 
 class SpanMetric(Metric):
-  
+
     def __init__(self, eps=1e-12):
         super().__init__()
 
@@ -143,7 +147,8 @@ def stripe(x, n, w, offset=(0, 0), dim=1):
     stride[1] = (1 if dim == 1 else seq_len) * numel
     return x.as_strided(size=(n, w, *x.shape[2:]),
                         stride=stride,
-                        storage_offset=(offset[0]*seq_len+offset[1])*numel)
+                        storage_offset=(offset[0] * seq_len + offset[1]) * numel)
+
 
 def cky(scores, mask):
     lens = mask[:, 0].sum(-1)
@@ -154,7 +159,7 @@ def cky(scores, mask):
     p_s = scores.new_zeros(seq_len, seq_len, batch_size).long()
     p_l = scores.new_zeros(seq_len, seq_len, batch_size).long()
 
-    for d in range(2, seq_len + 1): # d = 2, 3, ..., seq_len
+    for d in range(2, seq_len + 1):  # d = 2, 3, ..., seq_len
         # define the offset variable for convenience
         offset = d - 1
         n = seq_len - offset
@@ -167,7 +172,7 @@ def cky(scores, mask):
             s.diagonal(offset).copy_(s_label)
             continue
         # [n, offset, batch_size]
-        s_span = stripe(s, n, offset-1, (0, 1)) + stripe(s, n, offset-1, (1, offset), 0)
+        s_span = stripe(s, n, offset - 1, (0, 1)) + stripe(s, n, offset - 1, (1, offset), 0)
         # [batch_size, n, offset]
         s_span = s_span.permute(2, 0, 1)
         # [batch_size, n]
@@ -211,7 +216,7 @@ class CRFConstituency(nn.Module):
         # marginal probs are used for decoding, and can be computed by
         # combining the inside algorithm and autograd mechanism
         # instead of the entire inside-outside process
-        
+
         probs = scores
         if require_marginals:
             probs, = autograd.grad(logZ, scores, retain_graph=scores.requires_grad)
@@ -227,7 +232,6 @@ class CRFConstituency(nn.Module):
         loss = (logZ - score.sum(-1)) / total
         return loss, probs
 
-
     def inside(self, scores, mask):
         batch_size, seq_len, seq_len, n_labels = scores.shape
         # [seq_len, seq_len, n_labels, batch_size]
@@ -238,7 +242,7 @@ class CRFConstituency(nn.Module):
         # working in the log space, initial s with log(0) == -inf
         s = torch.full_like(scores[:, :, 0], float('-inf'))
 
-        for d in range(2, seq_len + 1): # d = 2, 3, ..., seq_len
+        for d in range(2, seq_len + 1):  # d = 2, 3, ..., seq_len
             # define the offset variable for convenience
             offset = d - 1
             # n denotes the number of spans to iterate,
@@ -248,7 +252,21 @@ class CRFConstituency(nn.Module):
             # [batch_size, n]
             diag_mask = mask.diagonal(offset)
 
-            ##### TODO   
+            v = torch.logsumexp(scores.diagonal(offset) * diag_mask, dim=0)
+
+            if d == 2:
+                s.diagonal(offset).copy_(v)
+            else:
+                # [n, offset, batch_size]
+                s_span = stripe(s, n, offset - 1, (0, 1)) + stripe(s, n, offset - 1, (1, offset), 0)
+                # [batch_size, n, offset]
+                s_span = s_span.permute(2, 0, 1)
+
+                s_span = torch.logsumexp(s_span * diag_mask.unsqueeze(-1), dim=-1)
+
+                s.diagonal(offset).copy_(s_span + v)
+
+            ##### TODO
             # if d == 2:
             #    DO something 
             # else:
@@ -287,7 +305,7 @@ class Biaffine(nn.Module):
         self.scale = scale
         self.bias_x = bias_x
         self.bias_y = bias_y
-        self.weight = nn.Parameter(torch.Tensor(n_out, n_in+bias_x, n_in+bias_y))
+        self.weight = nn.Parameter(torch.Tensor(n_out, n_in + bias_x, n_in + bias_y))
 
         self.reset_parameters()
 
@@ -387,10 +405,9 @@ class MLP(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, n_words, n_labels, n_tags, n_embed=100, n_feat_embed=100, embed_dropout=.33, 
-                    n_lstm_hidden=400, n_lstm_layers=3, encoder_dropout=.33,
-                    n_label_mlp=100, mlp_dropout=.33):
-
+    def __init__(self, n_words, n_labels, n_tags, n_embed=100, n_feat_embed=100, embed_dropout=.33,
+                 n_lstm_hidden=400, n_lstm_layers=3, encoder_dropout=.33,
+                 n_label_mlp=100, mlp_dropout=.33):
         super().__init__()
         self.word_embed = nn.Embedding(num_embeddings=n_words, embedding_dim=n_embed)
         n_input = n_embed
@@ -398,14 +415,13 @@ class Model(nn.Module):
         n_input += n_feat_embed
         self.embed_dropout = nn.Dropout(p=embed_dropout)
         self.encoder = nn.LSTM(input_size=n_input, hidden_size=n_lstm_hidden, num_layers=n_lstm_layers,
-                        bidirectional=True, dropout=encoder_dropout)
+                               bidirectional=True, dropout=encoder_dropout)
         self.encoder_dropout = nn.Dropout(p=encoder_dropout)
 
         args.n_hidden = n_lstm_hidden * 2
 
         self.mlp_l = MLP(n_in=args.n_hidden, n_out=n_label_mlp, dropout=mlp_dropout)
         self.mlp_r = MLP(n_in=args.n_hidden, n_out=n_label_mlp, dropout=mlp_dropout)
-
 
         self.feat_biaffine = Biaffine(n_in=n_label_mlp, n_out=n_labels, bias_x=True, bias_y=True)
         self.crf = CRFConstituency()
@@ -419,9 +435,8 @@ class Model(nn.Module):
         tag_embed = self.tag_embed(feats.pop())
         # concatenate the word and tag representations
         embed = torch.cat((word_embed, tag_embed), -1)
-        
-        return self.embed_dropout(embed)
 
+        return self.embed_dropout(embed)
 
     def forward(self, words, feats=None):
         r"""
@@ -454,9 +469,7 @@ class Model(nn.Module):
 
         return feat_r
 
-
     def loss(self, scores, charts, mask, require_marginals=True):
-
         loss, scores = self.crf(scores, mask, charts, require_marginals=require_marginals)
 
         return loss, scores
@@ -470,6 +483,7 @@ class Model(nn.Module):
     def decode(self, s_feat, mask):
         scores = cky(s_feat, mask)
         return scores
+
 
 def train(model, traindata, devdata, optimizer):
     elapsed = timedelta()
@@ -495,7 +509,7 @@ def train(model, traindata, devdata, optimizer):
             optimizer.zero_grad()
             if i % 50 == 0:
                 print(f"{i} iter of epoch {epoch}, loss: {loss:.4f}")
-        
+
         loss, dev_metric = evaluate(model, devdata.loader)
         print(f"{'dev:':5} loss: {loss:.4f} - {dev_metric}")
 
@@ -508,9 +522,9 @@ def train(model, traindata, devdata, optimizer):
         print(f"{'dev:':5} {best_metric}")
         print(f"{elapsed}s elapsed, {elapsed / epoch}s/epoch")
 
+
 @torch.no_grad()
 def evaluate(model, loader):
-
     model.eval()
 
     total_loss, metric = 0, SpanMetric()
@@ -527,20 +541,21 @@ def evaluate(model, loader):
         # since the evaluation relies on terminals,
         # the tree should be first built and then factorized
         preds = [Tree.build(tree, [(i, j, CHART.vocab[label]) for i, j, label in chart])
-                    for tree, chart in zip(trees, chart_preds)]
+                 for tree, chart in zip(trees, chart_preds)]
         total_loss += loss.item()
         metric([Tree.factorize(tree, args.delete, args.equal) for tree in preds],
-                [Tree.factorize(tree, args.delete, args.equal) for tree in trees])
+               [Tree.factorize(tree, args.delete, args.equal) for tree in trees])
     total_loss /= len(loader)
 
     return total_loss, metric
+
 
 @torch.no_grad()
 def predict(model, loader):
     model.eval()
 
     preds = {'trees': [], 'probs': []}
-    for words, *feats, trees in loader:
+    for words, *feats, trees, _ in loader:
         word_mask = words.ne(args.pad_index)[:, 1:]
         mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
         mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
@@ -549,9 +564,15 @@ def predict(model, loader):
         s_span = model.crf(s_feat, mask, require_marginals=True)
         chart_preds = model.decode(s_span, mask)
         preds['trees'].extend([Tree.build(tree, [(i, j, CHART.vocab[label]) for i, j, label in chart])
-                                for tree, chart in zip(trees, chart_preds)])
+                               for tree, chart in zip(trees, chart_preds)])
+
         if args.prob:
-            preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_span)])
+            preds['probs'].extend([prob[:i - 1, 1:i].cpu() for i, prob in zip(lens, s_span)])
+
+        for i in range(len(lens)):
+            if lens[i] < 10 and trees[i] != preds['trees'][-len(lens)+i]:
+                print('Golden Label:', trees[i])
+                print('Prediction:', preds['trees'][-len(lens)+i])
 
     return preds
 
@@ -565,7 +586,7 @@ if __name__ == "__main__":
     p.add_argument('--max-len', type=int, help='max length of the sentences')
     p.add_argument('--buckets', default=32, type=int, help='max num of buckets to use')
     p.add_argument('--batch-size', default=256, type=int, help='training batch size')
-    p.add_argument('--data', default='data/ptb/', help='path to data file')
+    p.add_argument('--data', default='data/PTB_first_2000/', help='path to data file')
     p.add_argument('--embed', default=None, help='path to pretrained embeddings')
     p.add_argument('--unk', default='unk', help='unk token in pretrained embeddings')
     p.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
@@ -578,7 +599,7 @@ if __name__ == "__main__":
     p.add_argument('--eps', default=1e-12, type=float, help='learning rate, eps')
     p.add_argument('--weight-decay', default=1e-5, type=float, help='learning rate, weight decay')
     p.add_argument('--clip', default=5., type=float, help='gradient clipping')
-
+    p.add_argument('--prob', action='store_true')
 
     args = p.parse_args()
 
@@ -614,8 +635,8 @@ if __name__ == "__main__":
     args.eos_index = WORD.eos_index
     print(args)
     print("Building the model")
-    model = Model(n_words=args.n_words, n_labels=args.n_labels, n_tags=args.n_tags, 
-                    n_lstm_hidden=args.n_lstm_hidden, n_lstm_layers=args.n_lstm_layers).to(args.device)
+    model = Model(n_words=args.n_words, n_labels=args.n_labels, n_tags=args.n_tags,
+                  n_lstm_hidden=args.n_lstm_hidden, n_lstm_layers=args.n_lstm_layers).to(args.device)
     print(model)
 
     transform.train()
@@ -627,5 +648,12 @@ if __name__ == "__main__":
     testdata.build(args.batch_size, args.buckets)
     print(f"\n{'train:':6} {traindata}\n{'dev:':6} {devdata}\n{'test:':6} {testdata}\n")
     optimizer = Adam(model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
-    train(model, traindata, devdata, optimizer)
-    evaluate(model, testdata.loader)
+
+    if not os.path.exists('./model_weights.pt'):
+        train(model, traindata, devdata, optimizer)
+        torch.save(model.state_dict(), './model_weights.pt')
+    else:
+        model.load_state_dict(torch.load('./model_weights.pt'))
+
+    # evaluate(model, testdata.loader)
+    predict(model, testdata.loader)
